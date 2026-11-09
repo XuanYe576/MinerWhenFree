@@ -21,6 +21,8 @@
 
 #include "blake2-config.h"
 
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#define EQ_BLAKE2_SSE 1
 #ifdef WIN32
 #include <intrin.h>
 #endif
@@ -40,6 +42,7 @@
 #endif
 
 #include "blake2b-round.h"
+#endif
 
 ALIGN(64) static const uint64_t blake2b_IV[8] = {
 	0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL,
@@ -119,6 +122,7 @@ int eq_blake2b_init_key(blake2b_state *S, const uint8_t outlen, const void *key,
 	return 0;
 }
 
+#ifdef EQ_BLAKE2_SSE
 static inline int blake2b_compress(blake2b_state *S, const uint8_t block[BLAKE2B_BLOCKBYTES])
 {
 	__m128i row1l, row1h;
@@ -188,6 +192,49 @@ static inline int blake2b_compress(blake2b_state *S, const uint8_t block[BLAKE2B
 	STOREU(&S->h[6], _mm_xor_si128(LOADU(&S->h[6]), row2h));
 	return 0;
 }
+#else /* portable scalar BLAKE2b compress (aarch64 / Grace / GH200) */
+
+static const uint8_t blake2b_sigma[12][16] = {
+	{  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15 },
+	{ 14,10, 4, 8, 9,15,13, 6, 1,12, 0, 2,11, 7, 5, 3 },
+	{ 11, 8,12, 0, 5, 2,15,13,10,14, 3, 6, 7, 1, 9, 4 },
+	{  7, 9, 3, 1,13,12,11,14, 2, 6, 5,10, 4, 0,15, 8 },
+	{  9, 0, 5, 7, 2, 4,10,15,14, 1,11,12, 6, 8, 3,13 },
+	{  2,12, 6,10, 0,11, 8, 3, 4,13, 7, 5,15,14, 1, 9 },
+	{ 12, 5, 1,15,14,13, 4,10, 0, 7, 6, 3, 9, 2, 8,11 },
+	{ 13,11, 7,14,12, 1, 3, 9, 5, 0,15, 4, 8, 6, 2,10 },
+	{  6,15,14, 9,11, 3, 0, 8,12, 2,13, 7, 1, 4,10, 5 },
+	{ 10, 2, 8, 4, 7, 6, 1, 5,15,11, 9,14, 3,12,13, 0 },
+	{  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15 },
+	{ 14,10, 4, 8, 9,15,13, 6, 1,12, 0, 2,11, 7, 5, 3 }
+};
+
+static inline uint64_t eq_rotr64(const uint64_t w, const unsigned c) { return (w >> c) | (w << (64 - c)); }
+
+static inline int blake2b_compress(blake2b_state *S, const uint8_t block[BLAKE2B_BLOCKBYTES])
+{
+	uint64_t m[16], v[16];
+	memcpy(m, block, sizeof(m));            /* little-endian host */
+	for (int i = 0; i < 8; ++i) { v[i] = S->h[i]; v[i + 8] = blake2b_IV[i]; }
+	/* same semantics as the SSE path: low 32 bits of counter, 32-bit final flag */
+	v[12] ^= (uint64_t)(uint32_t)S->counter;
+	v[14] ^= (uint64_t)(uint32_t)(0u - (uint32_t)S->lastblock) | ((uint64_t)(uint32_t)(0u - (uint32_t)S->lastblock) << 32);
+#define EQ_G(r,i,a,b,c,d) do { \
+	a = a + b + m[blake2b_sigma[r][2*i+0]]; d = eq_rotr64(d ^ a, 32); \
+	c = c + d; b = eq_rotr64(b ^ c, 24); \
+	a = a + b + m[blake2b_sigma[r][2*i+1]]; d = eq_rotr64(d ^ a, 16); \
+	c = c + d; b = eq_rotr64(b ^ c, 63); } while (0)
+	for (int r = 0; r < 12; ++r) {
+		EQ_G(r,0,v[0],v[4],v[ 8],v[12]); EQ_G(r,1,v[1],v[5],v[ 9],v[13]);
+		EQ_G(r,2,v[2],v[6],v[10],v[14]); EQ_G(r,3,v[3],v[7],v[11],v[15]);
+		EQ_G(r,4,v[0],v[5],v[10],v[15]); EQ_G(r,5,v[1],v[6],v[11],v[12]);
+		EQ_G(r,6,v[2],v[7],v[ 8],v[13]); EQ_G(r,7,v[3],v[4],v[ 9],v[14]);
+	}
+#undef EQ_G
+	for (int i = 0; i < 8; ++i) S->h[i] ^= v[i] ^ v[i + 8];
+	return 0;
+}
+#endif /* EQ_BLAKE2_SSE */
 
 int eq_blake2b_update(blake2b_state *S, const uint8_t *in, uint64_t inlen)
 {

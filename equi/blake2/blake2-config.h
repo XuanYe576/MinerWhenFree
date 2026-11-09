@@ -64,7 +64,7 @@
 #define HAVE_SSE2
 #endif
 
-#if !defined(HAVE_SSE2)
+#if !defined(HAVE_SSE2) && (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
 
 #ifdef _MSC_VER
 // enforce required stuff for now

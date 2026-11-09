@@ -192,35 +192,27 @@ static inline uint32_t etchash_epoch(uint32_t block_height)
  * Uses the same prime-number search as Ethash to keep the DAG
  * size a prime multiple of MIX_BYTES.
  */
+static bool etchash_is_prime(uint64_t n)
+{
+    if (n < 2) return false;
+    for (uint64_t d = 2; d * d <= n; d++)
+        if (n % d == 0) return false;
+    return true;
+}
+
+/* Ethash spec: largest size <= init+grow*epoch such that size/MIX_BYTES is prime. */
 static uint64_t etchash_dag_byte_size(uint32_t epoch)
 {
-    uint64_t sz = ETCHASH_DATASET_INIT + ETCHASH_DATASET_GROW * epoch;
-    sz -= ETCHASH_MIX_BYTES;
-    /* Find largest prime <= sz. */
-    while (true) {
-        bool is_prime = true;
-        for (uint64_t d = 2; d * d <= sz; d++) {
-            if (sz % d == 0) { is_prime = false; break; }
-        }
-        if (is_prime) break;
-        sz -= ETCHASH_MIX_BYTES;
-    }
+    uint64_t sz = ETCHASH_DATASET_INIT + ETCHASH_DATASET_GROW * (uint64_t)epoch - ETCHASH_MIX_BYTES;
+    while (!etchash_is_prime(sz / ETCHASH_MIX_BYTES)) sz -= 2 * ETCHASH_MIX_BYTES;
     return sz;
 }
 
+/* Ethash spec: cache = 2^24 + 2^17*epoch, size/HASH_BYTES prime. */
 static uint64_t etchash_light_byte_size(uint32_t epoch)
 {
-    /* Light cache is 1/1024 of the DAG by default.  Apply same prime search. */
-    uint64_t sz = (ETCHASH_DATASET_INIT / 32) + (ETCHASH_DATASET_GROW / 32) * epoch;
-    sz -= ETCHASH_HASH_BYTES;
-    while (true) {
-        bool is_prime = true;
-        for (uint64_t d = 2; d * d <= sz; d++) {
-            if (sz % d == 0) { is_prime = false; break; }
-        }
-        if (is_prime) break;
-        sz -= ETCHASH_HASH_BYTES;
-    }
+    uint64_t sz = (1ULL << 24) + (1ULL << 17) * (uint64_t)epoch - ETCHASH_HASH_BYTES;
+    while (!etchash_is_prime(sz / ETCHASH_HASH_BYTES)) sz -= 2 * ETCHASH_HASH_BYTES;
     return sz;
 }
 

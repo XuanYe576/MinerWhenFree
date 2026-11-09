@@ -104,32 +104,27 @@ static inline uint64_t kawpow_period(uint32_t block_height)
     return (uint64_t)(block_height / PROGPOW_PERIOD);
 }
 
+static bool kawpow_is_prime(uint64_t n)
+{
+    if (n < 2) return false;
+    for (uint64_t d = 2; d * d <= n; d++)
+        if (n % d == 0) return false;
+    return true;
+}
+
+/* Ethash spec: largest size <= init+grow*epoch such that size/MIX_BYTES is prime. */
 static uint64_t kawpow_dag_bytes(uint32_t epoch)
 {
-    uint64_t sz = KAWPOW_DATASET_INIT + KAWPOW_DATASET_GROW * epoch - KAWPOW_MIX_BYTES;
-    while (true) {
-        bool ok = true;
-        for (uint64_t d = 2; d * d <= sz; d++) {
-            if (sz % d == 0) { ok = false; break; }
-        }
-        if (ok) break;
-        sz -= KAWPOW_MIX_BYTES;
-    }
+    uint64_t sz = KAWPOW_DATASET_INIT + KAWPOW_DATASET_GROW * (uint64_t)epoch - KAWPOW_MIX_BYTES;
+    while (!kawpow_is_prime(sz / KAWPOW_MIX_BYTES)) sz -= 2 * KAWPOW_MIX_BYTES;
     return sz;
 }
 
+/* Ethash spec: cache = 2^24 + 2^17*epoch, size/HASH_BYTES prime. */
 static uint64_t kawpow_light_bytes(uint32_t epoch)
 {
-    uint64_t sz = (KAWPOW_DATASET_INIT / 32) + (KAWPOW_DATASET_GROW / 32) * epoch
-                  - KAWPOW_HASH_BYTES;
-    while (true) {
-        bool ok = true;
-        for (uint64_t d = 2; d * d <= sz; d++) {
-            if (sz % d == 0) { ok = false; break; }
-        }
-        if (ok) break;
-        sz -= KAWPOW_HASH_BYTES;
-    }
+    uint64_t sz = (1ULL << 24) + (1ULL << 17) * (uint64_t)epoch - KAWPOW_HASH_BYTES;
+    while (!kawpow_is_prime(sz / KAWPOW_HASH_BYTES)) sz -= 2 * KAWPOW_HASH_BYTES;
     return sz;
 }
 

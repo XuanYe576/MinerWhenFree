@@ -2,6 +2,8 @@ AC_INIT([gbxminer], [1.2.1], [], [gbxminer], [http://github.com/d0wn3d/gbxminer]
 
 AC_PREREQ([2.60])
 AC_CONFIG_SRCDIR([gbxminer.cpp])
+dnl Needed so $target is populated (otherwise aarch64/GH200 is never detected)
+AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_CONFIG_HEADERS([gbxminer-config.h])
 
@@ -49,7 +51,7 @@ case $target in
     have_x86=true
     have_x86_64=true
     ;;
-  aarch64-*)
+  aarch64-*|arm64-*)
     have_arm64=true
     ;;
 esac
@@ -158,6 +160,21 @@ AC_SUBST(CUDA_INCLUDES)
 AC_SUBST(CUDA_LIBS)
 AC_SUBST(CUDA_LDFLAGS)
 AC_SUBST(NVCC)
+
+dnl Optional: restrict CUDA targets, e.g. --with-cuda-arch=90 for GH200/H100.
+dnl Accepts a comma/space separated list of SM numbers.  Default: all archs.
+AC_ARG_WITH([cuda-arch],
+   [  --with-cuda-arch=LIST  SM versions to build, e.g. "90" or "80,90" [default=all]])
+NVCC_GENCODE=""
+if test -n "$with_cuda_arch" && test "x$with_cuda_arch" != xno ; then
+  for sm in `echo "$with_cuda_arch" | tr ',' ' '`; do
+    NVCC_GENCODE="$NVCC_GENCODE -gencode=arch=compute_$sm,code=sm_$sm"
+  done
+  dnl embed PTX for the highest listed arch for forward compatibility
+  NVCC_GENCODE="$NVCC_GENCODE -gencode=arch=compute_$sm,code=compute_$sm"
+fi
+AC_SUBST(NVCC_GENCODE)
+AM_CONDITIONAL([HAVE_CUDA_ARCH], [test -n "$NVCC_GENCODE"])
 
 AC_SUBST(OPENMP_CFLAGS)
 

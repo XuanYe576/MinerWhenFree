@@ -101,11 +101,8 @@ gbxminer_SOURCES += \
 			  firopow/firopow_cuda_miner_kernel.cpp
 endif
 
-if !ARCH_ARM64
-  # equihash
-  gbxminer_SOURCES += equi/equi.cpp equi/blake2/blake2bx.cpp equi/equihash.cpp equi/cuda_equi.cu
-
-endif
+# equihash (blake2bx.cpp has an SSE path on x86 and a portable scalar path on aarch64)
+gbxminer_SOURCES += equi/equi.cpp equi/blake2/blake2bx.cpp equi/equihash.cpp equi/cuda_equi.cu
 
 if HAVE_NVML
 nvml_defs = -DUSE_WRAPNVML
@@ -127,6 +124,8 @@ gbxminer_CPPFLAGS = @LIBCURL_CPPFLAGS@ @OPENMP_CFLAGS@ $(CPPFLAGS) $(PTHREAD_FLA
 if ARCH_ARM64
 gbxminer_CPPFLAGS += -DARM64
 gbxminer_LDFLAGS += -L@CUDA_LOCAL_PATH@/targets/aarch64-linux/lib
+# SBSA (server ARM: Grace/GH200) toolkits install here instead
+gbxminer_LDFLAGS += -L@CUDA_LOCAL_PATH@/targets/sbsa-linux/lib
 endif
 
 if HAVE_OSX
@@ -167,6 +166,10 @@ nvcc_ARCH += -gencode=arch=compute_87,code=sm_87
 nvcc_ARCH += -gencode=arch=compute_89,code=sm_89
 # Hopper (H100, RTX 5000 series)
 nvcc_ARCH += -gencode=arch=compute_90,code=sm_90
+
+if HAVE_CUDA_ARCH
+nvcc_ARCH := @NVCC_GENCODE@
+endif
 
 nvcc_FLAGS = $(nvcc_ARCH) @CUDA_INCLUDES@ -I. @CUDA_CFLAGS@
 nvcc_FLAGS += $(JANSSON_INCLUDES) --ptxas-options="-v"
